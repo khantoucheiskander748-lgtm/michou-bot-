@@ -2,17 +2,12 @@ import asyncio
 import random
 import time
 import os
+import json
 from datetime import datetime, timedelta
 from pyquotex.stable_api import Quotex
 from telethon import TelegramClient
 from flask import Flask, jsonify
 import threading
-
-# =========================
-# CONFIG
-# =========================
-EMAIL = "wagife9306@mugstock.com"
-PASSWORD = "latchi23@@"
 
 API_ID = 33567199
 API_HASH = "3fdd30ef25043c39d8cc897d6251b8f1"
@@ -23,6 +18,16 @@ BASE_AMOUNT = 1.0
 
 last_signal = None
 last_result = None
+
+# =========================
+# LOAD SESSION
+# =========================
+with open("session.json", "r", encoding="utf-8") as f:
+    SESSION_DATA = json.load(f)
+
+COOKIES = SESSION_DATA["cookies"]
+TOKEN = SESSION_DATA["token"]
+USER_AGENT = SESSION_DATA["user_agent"]
 
 # =========================
 # SMART ANALYSIS STRATEGY
@@ -66,53 +71,6 @@ async def decide_direction(client, asset):
             if last_close > float(sma["current"]):
                 call_score += 1
             elif last_close < float(sma["current"]):
-                put_score += 1
-
-        macd = await client.calculate_indicator(asset, "MACD", {}, history_size=3600, timeframe=60)
-        if macd and macd.get("macd"):
-            if macd["macd"][-1] > macd["signal"][-1]:
-                call_score += 2
-            else:
-                put_score += 2
-
-        boll = await client.calculate_indicator(asset, "BOLLINGER", {"period": 20, "std": 2}, history_size=3600, timeframe=60)
-        if boll and boll.get("middle"):
-            if last_close < boll["lower"][-1]:
-                call_score += 2
-            elif last_close > boll["upper"][-1]:
-                put_score += 2
-
-        stoch = await client.calculate_indicator(asset, "STOCHASTIC", {"k_period": 14, "d_period": 3}, history_size=3600, timeframe=60)
-        if stoch and stoch.get("current"):
-            if stoch["current"] < 20:
-                call_score += 1
-            elif stoch["current"] > 80:
-                put_score += 1
-
-        atr = await client.calculate_indicator(asset, "ATR", {"period": 14}, history_size=3600, timeframe=60)
-        if atr and atr.get("current"):
-            if float(atr["current"]) > 0.5:
-                call_score += 1
-                put_score += 1
-
-        adx = await client.calculate_indicator(asset, "ADX", {"period": 14}, history_size=3600, timeframe=60)
-        if adx and adx.get("adx"):
-            if adx["adx"][-1] > 25:
-                if call_score > put_score:
-                    call_score += 1
-                elif put_score > call_score:
-                    put_score += 1
-
-        ichi = await client.calculate_indicator(asset, "ICHIMOKU", {
-            "tenkan_period": 9,
-            "kijun_period": 26,
-            "senkou_b_period": 52
-        }, history_size=3600, timeframe=60)
-
-        if ichi and ichi.get("tenkan"):
-            if last_close > ichi["tenkan"][-1]:
-                call_score += 1
-            elif last_close < ichi["tenkan"][-1]:
                 put_score += 1
 
         if call_score > put_score:
@@ -171,8 +129,17 @@ async def trade_once(client, asset, amount, direction, duration, target_time):
 # MAIN BOT LOOP
 # =========================
 async def main():
-    client = Quotex(email=EMAIL, password=PASSWORD, lang="en")
-    client.set_account_mode("PRACTICE")
+    client = Quotex(
+        email="",
+        password="",
+        lang="en"
+    )
+
+    # حقن الجلسة يدوياً
+    client.session_data = SESSION_DATA
+    client.cookies = COOKIES
+    client.token = TOKEN
+    client.user_agent = USER_AGENT
 
     connected = False
     reason = ""
@@ -185,7 +152,7 @@ async def main():
         except Exception as e:
             reason = str(e)
 
-        print("إعادة محاولة الاتصال بـ Quotex...")
+        print("إعادة محاولة الاتصال بـ Quotex Session...")
         await asyncio.sleep(5)
 
     if not connected:
@@ -197,7 +164,7 @@ async def main():
     tg = TelegramClient("session_render", API_ID, API_HASH)
     await tg.start()
 
-    print("✅ BOT STARTED SUCCESSFULLY")
+    print("✅ BOT STARTED SUCCESSFULLY WITH SESSION")
 
     while True:
         try:
@@ -232,7 +199,7 @@ async def main():
 
 
 # =========================
-# FLASK STATUS SERVER
+# FLASK
 # =========================
 app = Flask(__name__)
 
@@ -246,12 +213,9 @@ def status():
 
 
 def run_flask():
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
 
 
-# =========================
-# START EVERYTHING
-# =========================
 async def starter():
     threading.Thread(target=run_flask).start()
     await main()
