@@ -1,4 +1,4 @@
 flask
 telethon
-pyquotex
+git+https://github.com/cleitonleonel/pyquotex.git
 asyncio
